@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Bet Converter</title>
+  <style>
+    body { font-family: Arial, sans-serif; background:#f9f9f9; margin:0; padding:20px; }
+    .container { max-width:700px; margin:auto; background:#fff; padding:20px; border-radius:12px; box-shadow:0 2px 6px rgba(0,0,0,0.1); }
+    h2 { margin-top:0; }
+    label { display:block; margin:12px 0 4px; font-weight:bold; }
+    input { width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:1rem; }
+    .row { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    .buttons { margin-top:16px; display:flex; flex-wrap:wrap; gap:8px; }
+    button { padding:8px 14px; border:none; border-radius:6px; cursor:pointer; background:#eee; }
+    button:hover { background:#ddd; }
+    .error { color:red; margin-top:10px; }
+    .note { font-size:0.9rem; color:#555; margin-top:20px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Bet Converter</h2>
+    <p>Convert between Decimal, Fractional, American odds, implied probability, and calculate payout.</p>
+    
+    <div class="row">
+      <div>
+        <label>Decimal</label>
+        <input type="number" step="0.000001" id="decimal" value="2.0">
+      </div>
+      <div>
+        <label>Fractional (a/b)</label>
+        <input type="text" id="fractional" value="1/1">
+      </div>
+      <div>
+        <label>American</label>
+        <input type="text" id="american" value="+100">
+      </div>
+      <div>
+        <label>Implied Probability (%)</label>
+        <input type="number" step="0.001" id="prob" value="50">
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:16px;">
+      <div>
+        <label>Stake</label>
+        <input type="number" step="0.01" id="stake" value="10">
+      </div>
+      <div>
+        <label>Payout</label>
+        <input type="text" id="payout" value="20" readonly>
+      </div>
+    </div>
+
+    <div class="buttons">
+      <button onclick="resetAll()">Reset</button>
+    </div>
+
+    <div class="error" id="error"></div>
+
+    <div class="note">
+      <strong>Notes:</strong>
+      <ul>
+        <li>Decimal odds are used for payout calculation: return = stake × decimal.</li>
+        <li>Fractional odds are shown as <code>numerator/denominator</code>.</li>
+        <li>American odds: +150 means underdog, -200 means favourite.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    const decimalEl = document.getElementById("decimal");
+    const fractionalEl = document.getElementById("fractional");
+    const americanEl = document.getElementById("american");
+    const probEl = document.getElementById("prob");
+    const stakeEl = document.getElementById("stake");
+    const payoutEl = document.getElementById("payout");
+    const errorEl = document.getElementById("error");
+
+    function gcd(a,b){ a=Math.abs(a); b=Math.abs(b); while(b){ [a,b]=[b,a%b] } return a; }
+
+    function simplifyFraction(num,den){
+      if(!isFinite(num)||!isFinite(den)||den===0) return "0/1";
+      const g=gcd(num,den);
+      return (num/g)+"/"+(den/g);
+    }
+
+    function decimalToFraction(d){
+      const frac=d-1; let best="0/1"; let bestErr=1e9;
+      for(let den=1;den<=100;den++){
+        const num=Math.round(frac*den);
+        const val=num/den;
+        const err=Math.abs(val-frac);
+        if(err<bestErr){ bestErr=err; best=simplifyFraction(num,den);}
+      }
+      return best;
+    }
+
+    function decimalToAmerican(d){
+      if(d>=2){ return "+"+Math.round((d-1)*100); }
+      return ""+(-Math.round(100/(d-1)));
+    }
+
+    function americanToDecimal(a){
+      a=Number(a);
+      if(a>0) return 1+a/100;
+      return 1+100/Math.abs(a);
+    }
+
+    function fractionToDecimal(fr){
+      const parts=fr.split("/");
+      if(parts.length!==2) return NaN;
+      const n=Number(parts[0]), d=Number(parts[1]);
+      if(!isFinite(n)||!isFinite(d)||d===0) return NaN;
+      return 1+n/d;
+    }
+
+    function decimalToProb(d){ return 100/d; }
+    function probToDecimal(p){ return 100/p; }
+
+    function updateFromDecimal(){
+      const d=Number(decimalEl.value);
+      if(!(d>1)){ errorEl.textContent="Decimal must be > 1"; return; }
+      errorEl.textContent="";
+      fractionalEl.value=decimalToFraction(d);
+      americanEl.value=decimalToAmerican(d);
+      probEl.value=(decimalToProb(d)).toFixed(3);
+      payoutEl.value=(d*Number(stakeEl.value)).toFixed(2);
+    }
+
+    function updateFromFraction(){
+      const d=fractionToDecimal(fractionalEl.value);
+      if(!(d>1)){ errorEl.textContent="Invalid fraction"; return; }
+      decimalEl.value=d.toFixed(6);
+      updateFromDecimal();
+    }
+
+    function updateFromAmerican(){
+      const raw=americanEl.value.replace("+","");
+      const d=americanToDecimal(raw);
+      if(!(d>1)){ errorEl.textContent="Invalid American odds"; return; }
+      decimalEl.value=d.toFixed(6);
+      updateFromDecimal();
+    }
+
+    function updateFromProb(){
+      const p=Number(probEl.value);
+      const d=probToDecimal(p);
+      if(!(d>1)){ errorEl.textContent="Invalid probability"; return; }
+      decimalEl.value=d.toFixed(6);
+      updateFromDecimal();
+    }
+
+    function updateFromStake(){
+      const d=Number(decimalEl.value);
+      payoutEl.value=(d*Number(stakeEl.value)).toFixed(2);
+    }
+
+    function resetAll(){
+      decimalEl.value=2.0; fractionalEl.value="1/1"; americanEl.value="+100";
+      probEl.value=50; stakeEl.value=10; payoutEl.value=20; errorEl.textContent="";
+    }
+
+    decimalEl.addEventListener("input",updateFromDecimal);
+    fractionalEl.addEventListener("input",updateFromFraction);
+    americanEl.addEventListener("input",updateFromAmerican);
+    probEl.addEventListener("input",updateFromProb);
+    stakeEl.addEventListener("input",updateFromStake);
+
+    updateFromDecimal();
+  </script>
+</body>
+</html>
